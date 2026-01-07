@@ -75,4 +75,16 @@ export const useChatStore = create((set) => ({
       return { typingUsers: newTypingUsers };
     });
   },
+
+  // Cleanup function
+  reset: () => {
+    set({
+      rooms: [],
+      currentRoom: null,
+      messages: [],
+      members: [],
+      isLoading: false,
+      typingUsers: new Set(),
+    });
+  },
 }));

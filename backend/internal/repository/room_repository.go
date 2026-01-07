@@ -3,6 +3,7 @@ package repository
 import (
     "database/sql"
     "fmt"
+    "hash/fnv"
     "time"
 
     "github.com/google/uuid"
@@ -116,6 +117,22 @@ func (r *RoomRepository) RemoveMember(roomID, userID uuid.UUID) error {
     return err
 }
 
+func (r *RoomRepository) Update(room *models.Room) error {
+    query := `
+        UPDATE rooms 
+        SET name = $1, description = $2, updated_at = $3
+        WHERE id = $4
+    `
+    _, err := r.db.Exec(query, room.Name, room.Description, time.Now(), room.ID)
+    return err
+}
+
+func (r *RoomRepository) Delete(roomID uuid.UUID) error {
+    query := `DELETE FROM rooms WHERE id = $1`
+    _, err := r.db.Exec(query, roomID)
+    return err
+}
+
 func (r *RoomRepository) IsMember(roomID, userID uuid.UUID) (bool, error) {
     var exists bool
     query := `SELECT EXISTS(SELECT 1 FROM room_members WHERE room_id = $1 AND user_id = $2)`
@@ -158,8 +175,40 @@ func (r *RoomRepository) GetMembers(roomID uuid.UUID) ([]*models.User, error) {
 }
 
 // Find or create a private room between two users
-func (r *RoomRepository) FindOrCreatePrivateRoom(user1ID, user2ID uuid.UUID) (*models.Room, error) {
-    // First, try to find existing private room
+// Uses advisory lock to prevent race condition when creating private rooms
+// otherUsername: username of the other user (user2) for room naming
+func (r *RoomRepository) FindOrCreatePrivateRoom(user1ID, user2ID uuid.UUID, otherUsername string) (*models.Room, error) {
+    // Ensure consistent ordering of user IDs for lock key
+    // This ensures same lock is used regardless of parameter order
+    var lockKey int64
+    id1Str := user1ID.String()
+    id2Str := user2ID.String()
+    
+    // Create consistent key regardless of parameter order
+    combinedStr := id1Str + "|" + id2Str
+    if id1Str > id2Str {
+        combinedStr = id2Str + "|" + id1Str
+    }
+    
+    // Hash the combined string to get lock key
+    h := fnv.New64a()
+    h.Write([]byte(combinedStr))
+    lockKey = int64(h.Sum64())
+    
+    tx, err := r.db.Begin()
+    if err != nil {
+        return nil, err
+    }
+    defer tx.Rollback()
+    
+    // Acquire advisory lock to prevent race condition
+    // Lock will be released when transaction commits/rolls back
+    _, err = tx.Exec("SELECT pg_advisory_xact_lock($1)", lockKey)
+    if err != nil {
+        return nil, err
+    }
+    
+    // Now check again if room exists (double-check pattern)
     query := `
         SELECT r.id, r.name, r.description, r.type, r.created_by, r.created_at, r.updated_at
         FROM rooms r
@@ -174,7 +223,7 @@ func (r *RoomRepository) FindOrCreatePrivateRoom(user1ID, user2ID uuid.UUID) (*m
     `
     
     room := &models.Room{}
-    err := r.db.QueryRow(query, user1ID, user2ID).Scan(
+    err = tx.QueryRow(query, user1ID, user2ID).Scan(
         &room.ID,
         &room.Name,
         &room.Description,
@@ -185,6 +234,8 @@ func (r *RoomRepository) FindOrCreatePrivateRoom(user1ID, user2ID uuid.UUID) (*m
     )
     
     if err == nil {
+        // Room found, commit transaction (releases lock)
+        tx.Commit()
         return room, nil
     }
     
@@ -192,21 +243,20 @@ func (r *RoomRepository) FindOrCreatePrivateRoom(user1ID, user2ID uuid.UUID) (*m
         return nil, err
     }
     
-    // Create new private room
+    // Create new private room with other user's username as name
+    roomName := otherUsername
+    if roomName == "" {
+        roomName = "Private Chat" // Fallback jika username tidak tersedia
+    }
+    
     room = &models.Room{
         ID:        uuid.New(),
-        Name:      "Private Chat",
+        Name:      roomName,
         Type:      "private",
         CreatedBy: user1ID,
         CreatedAt: time.Now(),
         UpdatedAt: time.Now(),
     }
-    
-    tx, err := r.db.Begin()
-    if err != nil {
-        return nil, err
-    }
-    defer tx.Rollback()
     
     // Insert room
     insertRoom := `

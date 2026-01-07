@@ -57,14 +57,26 @@ func main() {
     api.HandleFunc("/users", userHandler.GetAllUsers).Methods("GET", "OPTIONS")
     api.HandleFunc("/users/me", userHandler.GetUserProfile).Methods("GET", "OPTIONS")
 
+    api.HandleFunc("/users", userHandler.GetAllUsers).Methods("GET", "OPTIONS")
+    api.HandleFunc("/users/me", userHandler.GetUserProfile).Methods("GET", "OPTIONS")
+    api.HandleFunc("/users/me", userHandler.UpdateUserProfile).Methods("PUT", "OPTIONS")
+
     api.HandleFunc("/rooms", chatHandler.GetUserRooms).Methods("GET", "OPTIONS")
     api.HandleFunc("/rooms", chatHandler.CreateRoom).Methods("POST", "OPTIONS")
     api.HandleFunc("/rooms/private", chatHandler.CreateOrGetPrivateRoom).Methods("POST", "OPTIONS")
     api.HandleFunc("/rooms/{roomId}", chatHandler.GetRoom).Methods("GET", "OPTIONS")
+    api.HandleFunc("/rooms/{roomId}", chatHandler.UpdateRoom).Methods("PUT", "OPTIONS")
+    api.HandleFunc("/rooms/{roomId}", chatHandler.DeleteRoom).Methods("DELETE", "OPTIONS")
     api.HandleFunc("/rooms/{roomId}/messages", chatHandler.GetRoomMessages).Methods("GET", "OPTIONS")
+    api.HandleFunc("/rooms/{roomId}/messages/search", chatHandler.SearchMessages).Methods("GET", "OPTIONS")
+    api.HandleFunc("/rooms/{roomId}/read", chatHandler.MarkRoomAsRead).Methods("POST", "OPTIONS")
     api.HandleFunc("/rooms/{roomId}/members", chatHandler.GetRoomMembers).Methods("GET", "OPTIONS")
     api.HandleFunc("/rooms/{roomId}/members", chatHandler.AddRoomMember).Methods("POST", "OPTIONS")
+    api.HandleFunc("/rooms/{roomId}/members/{userId}", chatHandler.RemoveRoomMember).Methods("DELETE", "OPTIONS")
     api.HandleFunc("/rooms/{roomId}/leave", chatHandler.LeaveRoom).Methods("POST", "OPTIONS")
+
+    api.HandleFunc("/messages/{messageId}", chatHandler.UpdateMessage).Methods("PUT", "OPTIONS")
+    api.HandleFunc("/messages/{messageId}", chatHandler.DeleteMessage).Methods("DELETE", "OPTIONS")
 
     api.HandleFunc("/upload", fileHandler.UploadFile).Methods("POST", "OPTIONS")
 

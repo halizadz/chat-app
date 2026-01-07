@@ -1,54 +1,89 @@
-import React, { useState, useEffect } from 'react';
-import { X, Search, MessageCircle, Loader2 } from 'lucide-react';
-import Input from '../ui/Input';
-import Avatar from '../ui/Avatar';
-import { roomAPI, userAPI } from '../../services/api';
-import toast from 'react-hot-toast';
+import React, { useState, useEffect, useRef } from "react";
+import { X, Search, MessageCircle, Loader2 } from "lucide-react";
+import Input from "../ui/Input";
+import Avatar from "../ui/Avatar";
+import { roomAPI, userAPI } from "../../services/api";
+import toast from "react-hot-toast";
 
 const NewChatModal = ({ isOpen, onClose, onChatCreated }) => {
-  const [searchQuery, setSearchQuery] = useState('');
+  const [searchQuery, setSearchQuery] = useState("");
   const [users, setUsers] = useState([]);
   const [isLoading, setIsLoading] = useState(false);
   const [isFetching, setIsFetching] = useState(false);
+  const searchTimeoutRef = useRef(null);
 
+  // Fetch users dengan search atau tanpa search
   useEffect(() => {
     const fetchUsers = async () => {
-      if (isOpen) {
-        setIsFetching(true);
-        try {
-          const response = await userAPI.getAllUsers();
-          setUsers(response.data || []);
-        } catch (error) {
-          console.error('Error fetching users:', error);
-          toast.error('Failed to load users');
-        } finally {
-          setIsFetching(false);
+      if (!isOpen) return;
+
+      setIsFetching(true);
+      try {
+        let response;
+        // Deteksi jika query adalah email Gmail atau username Gmail
+        // Jika mengandung @gmail.com -> pasti Gmail
+        // Jika tidak mengandung @ sama sekali -> bisa jadi username Gmail, coba search Gmail juga
+        const hasAtSymbol = searchQuery.includes("@");
+        const isGmailSearch =
+          searchQuery.includes("@gmail.com") ||
+          (!hasAtSymbol && searchQuery.trim() !== "");
+
+        if (searchQuery.trim()) {
+          if (isGmailSearch) {
+            // Gunakan pencarian Gmail khusus
+            // Jika tidak ada @, backend akan handle dengan menambahkan @gmail.com
+            response = await userAPI.searchUsersByGmail(searchQuery);
+          } else {
+            // Gunakan pencarian umum (username atau email apapun)
+            response = await userAPI.searchUsers(searchQuery);
+          }
+        } else {
+          // Tanpa search, ambil semua user
+          response = await userAPI.getAllUsers();
         }
+        setUsers(response.data || []);
+      } catch (error) {
+        console.error("Error fetching users:", error);
+        toast.error("Failed to load users");
+        setUsers([]);
+      } finally {
+        setIsFetching(false);
       }
     };
-    
-    fetchUsers();
-  }, [isOpen]);
+
+    // Debounce search untuk menghindari terlalu banyak request
+    if (searchTimeoutRef.current) {
+      clearTimeout(searchTimeoutRef.current);
+    }
+
+    searchTimeoutRef.current = setTimeout(
+      () => {
+        fetchUsers();
+      },
+      searchQuery.trim() ? 300 : 0
+    ); // Delay 300ms jika ada search query
+
+    return () => {
+      if (searchTimeoutRef.current) {
+        clearTimeout(searchTimeoutRef.current);
+      }
+    };
+  }, [isOpen, searchQuery]);
 
   if (!isOpen) return null;
-
-  const filteredUsers = users.filter(user =>
-    user.username.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    user.email.toLowerCase().includes(searchQuery.toLowerCase())
-  );
 
   const handleStartChat = async (userId) => {
     setIsLoading(true);
     try {
       const response = await roomAPI.createPrivateRoom(userId);
       const room = response.data;
-      
-      toast.success('Chat started!');
+
+      toast.success("Chat started!");
       onChatCreated(room);
       onClose();
-      setSearchQuery('');
+      setSearchQuery("");
     } catch (error) {
-      toast.error('Failed to start chat');
+      toast.error("Failed to start chat");
       console.error(error);
     } finally {
       setIsLoading(false);
@@ -88,29 +123,27 @@ const NewChatModal = ({ isOpen, onClose, onChatCreated }) => {
               <Loader2 className="w-8 h-8 text-primary-600 animate-spin mb-3" />
               <p className="text-gray-500">Loading users...</p>
             </div>
-          ) : filteredUsers.length === 0 ? (
+          ) : users.length === 0 ? (
             <div className="text-center py-8">
               <MessageCircle className="w-12 h-12 text-gray-400 mx-auto mb-3" />
               <p className="text-gray-500">
-                {searchQuery ? 'No users found' : 'No users available'}
+                {searchQuery ? "No users found" : "No users available"}
               </p>
             </div>
           ) : (
             <div className="space-y-2">
-              {filteredUsers.map((user) => (
+              {users.map((user) => (
                 <button
                   key={user.id}
                   onClick={() => handleStartChat(user.id)}
                   disabled={isLoading}
                   className="w-full flex items-center space-x-3 p-3 rounded-lg hover:bg-gray-50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                 >
-                  <Avatar
-                    alt={user.username}
-                    size="md"
-                    status={user.status}
-                  />
+                  <Avatar alt={user.username} size="md" status={user.status} />
                   <div className="flex-1 text-left">
-                    <h4 className="font-semibold text-gray-900">{user.username}</h4>
+                    <h4 className="font-semibold text-gray-900">
+                      {user.username}
+                    </h4>
                     <p className="text-sm text-gray-500">{user.email}</p>
                   </div>
                   {isLoading ? (

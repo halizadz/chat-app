@@ -16,6 +16,12 @@ export const useWebSocket = (roomId) => {
   const connect = useCallback(() => {
     if (!roomId || !token) return;
 
+    // Prevent multiple connections
+    if (wsRef.current && (wsRef.current.readyState === WebSocket.OPEN || wsRef.current.readyState === WebSocket.CONNECTING)) {
+      console.log("WebSocket already connecting/connected");
+      return;
+    }
+
     const ws = new WebSocket(`${WS_BASE_URL}/${roomId}?token=${token}`);
 
     ws.onopen = () => {
